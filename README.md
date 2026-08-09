@@ -1,334 +1,350 @@
-# EMA Tracker - Cryptocurrency Trading Signal System
+# Delta Trend Scanner
 
-A real-time cryptocurrency trading signal bot that monitors **Binance Futures** for EMA crossovers and sends alerts via **Telegram** and **Windows notifications**.
+A full-stack cryptocurrency market-analysis application built from scratch around **Delta Exchange market data** and a multi-timeframe trend-scanning workflow.
 
----
+The primary goal is not to blindly generate trades. The system first identifies **which markets are actually trending**, determines the trend direction and strength, detects possible trend exhaustion/reversal, and only then evaluates the user's **9/15 EMA crossover** as an entry trigger.
 
-## Folder Structure
+## Project Goals
 
+1. Discover the strongest trending Delta Exchange markets.
+2. Rank markets using objective trend metrics instead of manual chart hunting.
+3. Support 15m trend context, 5m setup detection, and optional 3m entry confirmation.
+4. Detect trend continuation and potential reversals using price structure and indicators.
+5. Keep market-data ingestion, indicator calculations, strategy logic, persistence, API, and UI separated.
+6. Build the application end-to-end by hand so every technology in the stack is understood.
+7. Keep the architecture compatible with Cloudflare Workers and the chosen database stack.
+
+> **Important:** This project is an analytical/trading-tool project, not financial advice. A scanner score is not a guarantee of profitable trades.
+
+## Technology Stack
+
+### Frontend
+
+- React
+- TypeScript
+- TanStack Start
+- TanStack Router
+- TanStack Query
+- TanStack Table
+- Jotai
+- Tailwind CSS v4
+- shadcn/ui
+- Charting library
+
+### Backend / Platform
+
+- Hono
+- Cloudflare Workers
+- Cloudflare KV
+- Cloudflare R2
+- Cloudflare Hyperdrive
+- Vite
+- Alchemy IaC
+
+### Data / Database
+
+- PostgreSQL (Supabase as the hosted database option)
+- Prisma — migrations/schema/table management only
+- Drizzle — application ORM where appropriate
+- Kysely — typed SQL/querying
+
+### Authentication
+
+- Better Auth
+
+## Architecture
+
+```text
+Delta Exchange
+      |
+      | REST / WebSocket market data
+      v
++---------------------------+
+| Market Data Layer         |
+| instruments / ticker      |
+| candles / realtime stream |
++-------------+-------------+
+              |
+              v
++---------------------------+
+| Indicator Engine          |
+| EMA / ADX / ATR / RVOL    |
+| RSI / structure metrics   |
++-------------+-------------+
+              |
+              v
++---------------------------+
+| Trend Engine              |
+| direction / strength      |
+| continuation / exhaustion |
+| reversal candidates       |
++-------------+-------------+
+              |
+              v
++---------------------------+
+| Strategy Engine           |
+| 15m context               |
+| 5m setup                  |
+| 3m confirmation           |
+| 9/15 EMA trigger          |
++-------------+-------------+
+              |
+              +-------------------+
+              |                   |
+              v                   v
+        PostgreSQL             Hono API
+              |                   |
+              +---------+---------+
+                        |
+                        v
+              TanStack Query
+                        |
+                        v
+              React Dashboard
 ```
+
+## Core Trading Logic
+
+The project intentionally separates **trend selection** from **entry timing**.
+
+### Trend selection
+
+The scanner should answer:
+
+> Which Delta Exchange markets are trending right now?
+
+Candidate inputs include:
+
+- ADX / trend strength
+- price relative to EMA 200
+- EMA slope and alignment
+- relative volume (RVOL)
+- ATR / volatility expansion
+- recent percentage movement
+- higher-high / higher-low or lower-high / lower-low structure
+- multi-timeframe alignment
+
+### Entry workflow
+
+```text
+15m: identify trend
+        |
+        v
+5m: identify setup
+        |
+        v
+3m: optional entry confirmation
+        |
+        v
+9 EMA / 15 EMA crossover
+```
+
+### Reversal workflow
+
+The scanner should not assume that one red/green candle means a reversal.
+
+```text
+Strong trend
+   -> momentum weakens
+   -> structure breaks
+   -> EMA relationship changes
+   -> volume/volatility confirmation
+   -> reversal candidate
+```
+
+## Planned Folder Structure
+
+```text
 Ema_Tracker/
-├── main.js                  ⭐ Production entry point
+├── README.md
 ├── package.json
-├── settings.json            Runtime config (auto-saved by bot)
-├── ecosystem.config.js      PM2 process manager config
-├── Dockerfile               Container deployment
-├── Procfile                 Railway / Render process file
-├── render.yaml              Render.com deployment config
-├── fly.toml                 Fly.io deployment config
-├── .env.example             Environment variable template
+├── tsconfig.json
+├── vite.config.ts
+├── wrangler.jsonc
+├── alchemy.run.ts
+├── .env.example
 ├── .gitignore
 │
-├── src/                     Core source modules
-│   ├── indicators.js        RSI, MACD, Bollinger Bands, ATR
-│   └── ml/                  Machine Learning components
-│       ├── model.js         Brain.js neural network (train + predict)
-│       ├── alternative.js   Alternative ML approach
-│       ├── collector.js     Data collection helpers
-│       └── os_module.js     OS-level ML utilities
+├── app/                              # TanStack Start application entry
+│   ├── client.tsx                    # Client-side application bootstrap
+│   ├── router.tsx                    # TanStack Router configuration
+│   └── routes/
+│       ├── __root.tsx                # Root application layout/providers
+│       ├── index.tsx                 # Main trend-scanner page
+│       ├── scanner.tsx               # Full scanner table and filters
+│       ├── markets.tsx               # Market/instrument browser
+│       └── markets.$symbol.tsx       # Individual market analysis page
 │
-├── variants/                Alternative bot implementations
-│   ├── node_simple.js       Simplified — Telegram polling, REST-only
-│   ├── node_minimal.js      Minimal — no color deps, direct HTTP
-│   └── node_builtin.js      Pure Node.js built-ins only
+├── components/                       # Reusable React UI components
+│   ├── scanner/
+│   │   ├── TrendTable.tsx             # Ranked trending-market table
+│   │   ├── TrendScoreBadge.tsx        # Visual trend-score indicator
+│   │   ├── TrendFilters.tsx           # Scanner timeframe/filter controls
+│   │   └── MarketStatus.tsx            # Current market state display
+│   ├── charts/
+│   │   ├── PriceChart.tsx             # Price + EMA chart
+│   │   ├── VolumeChart.tsx            # Volume/RVOL visualization
+│   │   └── IndicatorChart.tsx         # Indicator visualization
+│   └── ui/                             # shadcn/ui components
 │
-├── scripts/                 Utility scripts
-│   ├── setup.js             First-run setup wizard
-│   └── data_sync.js         Data sync utility
+├── features/                          # Business-oriented frontend modules
+│   ├── scanner/
+│   │   ├── api.ts                     # Scanner API calls
+│   │   ├── queries.ts                 # TanStack Query definitions
+│   │   ├── atoms.ts                   # Jotai scanner UI state
+│   │   └── types.ts                   # Scanner frontend types
+│   └── market/
+│       ├── api.ts                     # Market detail API calls
+│       ├── queries.ts                 # Market query definitions
+│       └── types.ts                   # Market frontend types
 │
-├── logs/                    (auto-created) Daily log files
-├── ml_data/                 (auto-created) ML training data
-├── ml_models/               (auto-created) Saved model weights
-├── csv_data/                (auto-created) CSV exports
-└── models/                  (auto-created) Model storage
+├── server/                            # Hono/backend application
+│   ├── index.ts                       # Worker/Hono application entry
+│   ├── env.ts                         # Typed environment bindings/config
+│   ├── middleware/
+│   │   ├── auth.ts                    # Better Auth/session middleware
+│   │   ├── errors.ts                  # API error handling
+│   │   └── logging.ts                 # Request logging
+│   ├── routes/
+│   │   ├── health.ts                  # Health/readiness endpoints
+│   │   ├── markets.ts                 # Market/instrument endpoints
+│   │   ├── scanner.ts                 # Trend scanner endpoints
+│   │   └── auth.ts                    # Authentication-related endpoints
+│   └── services/
+│       ├── delta/
+│       │   ├── client.ts              # Delta Exchange HTTP client
+│       │   ├── instruments.ts         # Instrument metadata retrieval
+│       │   ├── ticker.ts              # Ticker retrieval
+│       │   ├── candles.ts             # Historical candle retrieval
+│       │   └── websocket.ts           # Realtime market-data connection
+│       ├── cache/
+│       │   ├── kv.ts                  # Cloudflare KV access
+│       │   └── market-cache.ts        # Market-data caching rules
+│       └── auth/
+│           └── better-auth.ts         # Better Auth server configuration
+│
+├── core/                              # Exchange-independent trading logic
+│   ├── indicators/
+│   │   ├── ema.ts                     # Exponential moving average
+│   │   ├── adx.ts                     # Average Directional Index
+│   │   ├── atr.ts                     # Average True Range
+│   │   ├── rsi.ts                     # Relative Strength Index
+│   │   └── rvol.ts                    # Relative volume calculation
+│   ├── structure/
+│   │   ├── swings.ts                  # Swing high/low detection
+│   │   ├── trend.ts                   # Higher-high/lower-low analysis
+│   │   └── reversal.ts                # Reversal/exhaustion detection
+│   ├── trend/
+│   │   ├── trend-engine.ts            # Combines metrics into trend state
+│   │   ├── trend-score.ts             # Calculates normalized trend score
+│   │   └── timeframe-alignment.ts     # Multi-timeframe trend alignment
+│   └── strategy/
+│       ├── ema-crossover.ts           # 9/15 EMA crossover detection
+│       ├── setup.ts                   # Trade-setup qualification
+│       └── rules.ts                   # Strategy rule definitions
+│
+├── db/                                # Database schema and query layer
+│   ├── schema/                        # Database domain schemas/types
+│   ├── migrations/                    # Prisma-generated migrations
+│   ├── prisma/                        # Prisma schema/config if needed
+│   ├── drizzle/                       # Drizzle schema/config if needed
+│   └── queries/                       # Kysely query implementations
+│       ├── markets.ts                 # Market persistence queries
+│       ├── candles.ts                 # Candle persistence queries
+│       └── trend-snapshots.ts         # Trend snapshot queries
+│
+├── lib/                               # Shared application utilities
+│   ├── logger.ts                      # Structured logging utility
+│   ├── errors.ts                      # Shared application errors
+│   ├── time.ts                        # Timeframe/date helpers
+│   └── validation.ts                  # Shared validation helpers
+│
+├── types/                             # Shared TypeScript contracts
+│   ├── market.ts                      # Market/instrument types
+│   ├── candle.ts                      # OHLCV candle types
+│   ├── indicators.ts                  # Indicator result types
+│   ├── trend.ts                       # Trend-analysis types
+│   └── api.ts                          # API request/response contracts
+│
+├── tests/                             # Automated tests
+│   ├── unit/
+│   │   ├── indicators/                # Indicator correctness tests
+│   │   ├── structure/                 # Market-structure tests
+│   │   └── strategy/                  # Strategy-rule tests
+│   ├── integration/                   # API/database integration tests
+│   └── fixtures/                      # Deterministic candle/market data
+│
+├── scripts/                           # Developer/maintenance scripts
+│   ├── seed.ts                        # Development database seed
+│   └── backfill.ts                    # Historical market-data backfill
+│
+├── infra/                             # Cloudflare/Alchemy infrastructure
+│   ├── worker.ts                      # Worker infrastructure definition
+│   ├── kv.ts                           # KV resource definition
+│   ├── r2.ts                           # R2 bucket definition
+│   └── hyperdrive.ts                   # Hyperdrive configuration
+│
+└── docs/                              # Project learning/design documentation
+    ├── architecture.md                # Detailed system architecture
+    ├── data-model.md                  # Database model documentation
+    ├── trend-engine.md                # Trend scoring methodology
+    ├── strategy.md                    # Trading strategy rules
+    └── development-plan.md            # Step-by-step implementation plan
 ```
 
----
+## Development Philosophy
 
-## System Architecture
+Build this project incrementally. Do not start by connecting every service at once.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    INITIALIZATION                         │
-│  loadSettings() → initializeTerminal() → sendStartup()   │
-│  → checkEMACross() → setupAllWebSockets()                 │
-└────────────────────┬─────────────────────────────────────┘
-                     │
-        ┌────────────┴────────────┐
-        ▼                         ▼
-┌───────────────┐       ┌─────────────────────┐
-│  REST Polling │       │ WebSocket Streams    │
-│  (Backup)     │       │ (Real-Time Primary)  │
-│  Every 5 min  │       │ Per-symbol kline_XY  │
-└───────┬───────┘       └──────────┬──────────┘
-        │                          │
-        ▼                          ▼
-┌─────────────────────────────────────────────┐
-│           CROSSOVER DETECTION               │
-│                                             │
-│  Mode A: Price vs Single EMA (50/100/200)   │
-│    - Price crosses above EMA → Bullish 🟢   │
-│    - Price crosses below EMA → Bearish 🔴   │
-│                                             │
-│  Mode B: Dual EMA 9/15 Crossover            │
-│    - EMA(9) crosses above EMA(15) → Bull 🟢 │
-│    - EMA(9) crosses below EMA(15) → Bear 🔴 │
-└──────────────────┬──────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────┐
-│          ALERT SYSTEM                       │
-│  shouldAlert() → cooldown check → send:     │
-│    • Telegram message with TradingView link │
-│    • Windows toast with full signal info    │
-│    • Console + file log                     │
-└─────────────────────────────────────────────┘
+```text
+1. React + TypeScript + Vite
+2. TanStack Router
+3. Tailwind + shadcn
+4. TanStack Table
+5. TanStack Query
+6. Hono
+7. Delta REST API
+8. Delta WebSocket
+9. Indicator engine
+10. Trend engine
+11. Database
+12. Authentication
+13. Realtime scanner
+14. Charts
+15. Cloudflare deployment
+16. Alchemy infrastructure
 ```
 
----
+Every layer should be understood and tested before the next layer is introduced.
 
-## EMA Crossover Modes
+## Initial Non-Goals
 
-### Mode A: Price vs Single EMA (Default)
-Detects when the closing price crosses above/below a single EMA line.
-- Select **EMA 50**, **EMA 100**, or **EMA 200** in settings.
-- Best for trend-following on longer timeframes.
+- Automatic order execution
+- Leveraged trading automation
+- Guaranteed-profit predictions
+- Black-box ML before the deterministic strategy is validated
+- Mixing exchange-specific code into indicator/strategy calculations
 
-### Mode B: Dual EMA 9/15 Crossover
-Detects when the fast EMA(9) crosses the slow EMA(15).
-- Select **EMA 9/15** in settings to activate this mode.
-- More responsive to short-term momentum shifts.
-- When active, single EMA options (50/100/200) are ignored.
-- Only EMA-to-EMA crossovers trigger alerts — price position is irrelevant.
+## Git Workflow
 
----
-
-## Telegram Bot Commands
-
-| Command | Description |
-|---------|-------------|
-| `/menu` | Main menu with all options |
-| `/status` | Current bot status and configuration |
-| `/settings` | Change EMA, timeframe, volume, ML, crossover mode |
-| `/top` | Top gainers, losers, highest volume |
-| `/refresh` | Reconnect all WebSocket streams |
-| `/mlstatus` | ML model performance stats |
-| `/train` | Manually trigger ML model training |
-| `/collectdata` | Collect historical data for ML |
-| `/exportcsv` | Export training data to CSV |
-| `/help` | Help message |
-
----
-
-## Configuration (via Settings or Environment Variables)
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | — | Your bot token from @BotFather |
-| `TELEGRAM_CHAT_ID` | — | Your Telegram user/chat ID |
-| `EMA_PERIOD` | 200 | Single EMA period (50, 100, or 200) |
-| `TIMEFRAME` | 5m | Candlestick interval (1m, 5m, 15m, 1h, 4h) |
-| `VOLUME_THRESHOLD` | 100M | Minimum 24h volume to track a pair |
-| `DUAL_EMA_MODE` | false | Enable EMA 9/15 crossover mode |
-| `CHECK_INTERVAL` | 5 min | Backup REST polling interval |
-| `ALERT_COOLDOWN` | 15 min | Minimum time between alerts per symbol |
-| `ML_ENABLED` | false | Enable ML-enhanced predictions |
-
----
-
-## Quick Start (Local)
+Development happens on feature branches. The initial architecture is being established separately from the existing EMA Tracker implementation.
 
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Set your tokens (or set as environment variables)
-#    Edit settings.json OR use environment variables
-
-# 3. Run the production bot
-npm start
-
-# 4. Or run with PM2 (keeps alive after terminal close)
-npx pm2 start ecosystem.config.js
-npx pm2 logs ema-tracker
+git checkout -b crypto-trend-scanner-foundation
 ```
 
----
+Future work should use small commits such as:
 
-## 🚀 Free 24/7 Deployment (Run When Laptop is Off)
-
-### Option 1 — Railway ⭐ EASIEST
-
-**Railway** automatically deploys from GitHub and keeps your bot running forever.
-Free tier includes **$5 credit/month** — enough for this lightweight bot.
-
-**Steps:**
-1. Push your code to GitHub
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub Repo**
-3. Select your repo
-4. Click **Variables** and add:
-   - `TELEGRAM_BOT_TOKEN` = your token
-   - `TELEGRAM_CHAT_ID` = your chat ID
-5. Railway detects the `Procfile` automatically and starts `node main.js`
-6. Done — your bot is live 24/7 ✅
-
-```bash
-# Push to GitHub first:
-git init
-git add .
-git commit -m "Initial deploy"
-git remote add origin https://github.com/YOUR_USERNAME/ema-tracker.git
-git push -u origin main
+```text
+feat: add delta market client
+feat: add ema indicator
+feat: add trend scoring engine
+feat: add scanner endpoint
+feat: add scanner table
 ```
 
----
+## Current Status
 
-### Option 2 — Render (Free Background Worker)
+**Phase 0 — Architecture / repository foundation**
 
-**Render** Background Workers run continuously (750 hours/month free — enough for 24/7).
-
-**Steps:**
-1. Push your code to GitHub
-2. Go to [render.com](https://render.com) → **New** → **Background Worker**
-3. Connect your GitHub repo
-4. Render detects `render.yaml` automatically
-5. Add your secret environment variables in the dashboard:
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_CHAT_ID`
-6. Click **Deploy** — your bot runs forever ✅
-
----
-
-### Option 3 — Fly.io (Free Shared VMs)
-
-**Fly.io** gives you 3 free shared VMs that run 24/7. Needs Docker.
-
-```bash
-# Install flyctl CLI
-npm install -g flyctl
-
-# Login
-fly auth login
-
-# Set your secrets (never commit these!)
-fly secrets set TELEGRAM_BOT_TOKEN=your-token TELEGRAM_CHAT_ID=your-id
-
-# Deploy
-fly deploy
-```
-
----
-
-### Option 4 — Oracle Cloud Always Free ♾️ FOREVER FREE
-
-**Oracle Cloud** gives you 4 ARM CPU cores + 24 GB RAM VMs that are **permanently free**. Best for serious long-term use.
-
-1. Sign up at [cloud.oracle.com](https://cloud.oracle.com) (free, needs credit card for verification only — never charged)
-2. Create a free **ARM Ampere VM** instance (Ubuntu 22.04)
-3. SSH into the VM and run:
-
-```bash
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Clone your repo
-git clone https://github.com/YOUR_USERNAME/ema-tracker.git
-cd ema-tracker
-npm install
-
-# Set environment variables
-export TELEGRAM_BOT_TOKEN=your-token
-export TELEGRAM_CHAT_ID=your-id
-
-# Install PM2 to keep it running forever
-sudo npm install -g pm2
-pm2 start ecosystem.config.js
-pm2 save
-pm2 startup    # follow the printed command to auto-start on reboot
-```
-
----
-
-## Data Flow
-
-1. **Startup**: Load saved settings → fetch all Binance Futures pairs above volume threshold
-2. **Initial Check**: REST API fetches klines for each pair → calculates EMA → checks for crossovers
-3. **Real-Time**: WebSocket streams receive closed candles → updates kline cache → recalculates EMA → checks crossovers
-4. **Alert**: On crossover detection → cooldown check → Telegram message + Windows toast notification + log
-5. **Periodic**: Every 5 min backup REST check; every 1 min WebSocket heartbeat; every 12h ML training
-
----
-
-## EMA Crossover Modes
-
-### Mode A: Price vs Single EMA (Default)
-Detects when the closing price crosses above/below a single EMA line.
-- Select **EMA 50**, **EMA 100**, or **EMA 200** in settings.
-- Best for trend-following on longer timeframes.
-
-### Mode B: Dual EMA 9/15 Crossover
-Detects when the fast EMA(9) crosses the slow EMA(15).
-- Select **EMA 9/15** in settings to activate this mode.
-- More responsive to short-term momentum shifts.
-- When active, single EMA options (50/100/200) are ignored.
-- Only EMA-to-EMA crossovers trigger alerts — price position is irrelevant.
-
----
-
-## Telegram Bot Commands
-
-| Command | Description |
-|---------|-------------|
-| `/menu` | Main menu with all options |
-| `/status` | Current bot status and configuration |
-| `/settings` | Change EMA, timeframe, volume, ML, crossover mode |
-| `/top` | Top gainers, losers, highest volume |
-| `/refresh` | Reconnect all WebSocket streams |
-| `/mlstatus` | ML model performance stats |
-| `/train` | Manually trigger ML model training |
-| `/collectdata` | Collect historical data for ML |
-| `/exportcsv` | Export training data to CSV |
-| `/help` | Help message |
-
----
-
-## Configuration (via Settings or Environment Variables)
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `EMA_PERIOD` | 200 | Single EMA period (50, 100, or 200) |
-| `TIMEFRAME` | 5m | Candlestick interval (1m, 5m, 15m, 1h, 4h) |
-| `VOLUME_THRESHOLD` | 100M | Minimum 24h volume to track a pair |
-| `DUAL_EMA_MODE` | false | Enable EMA 9/15 crossover mode |
-| `CHECK_INTERVAL` | 5 min | Backup REST polling interval |
-| `ALERT_COOLDOWN` | 15 min | Minimum time between alerts per symbol |
-| `ML_ENABLED` | false | Enable ML-enhanced predictions |
-
----
-
-## Quick Start
-
-```bash
-# Install dependencies
-npm install
-
-# Run the production bot
-npm start
-
-# Or run the simplified version
-node node_simple.js
-
-# PM2 deployment
-npx pm2 start ecosystem.config.js
-```
-
----
-
-## Data Flow
-
-1. **Startup**: Load saved settings → fetch all Binance Futures pairs above volume threshold
-2. **Initial Check**: REST API fetches klines for each pair → calculates EMA → checks for crossovers
-3. **Real-Time**: WebSocket streams receive closed candles → updates kline cache → recalculates EMA → checks crossovers
-4. **Alert**: On crossover detection → cooldown check → Telegram message + desktop notification + log
-5. **Periodic**: Every 5 min backup REST check; every 1 min WebSocket heartbeat; every 12h ML training
+The repository structure and documentation are being established first. Implementation will follow incrementally, with tests added alongside each core module.
